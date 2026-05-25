@@ -1,0 +1,18 @@
+name: Ceramic5
+type: nonlinear_bh_curve
+linear_fallback_permeability: 1.05
+relative_permeability: 1.05
+magnetization_A_m: 190986   # Matches FEMM coercivity
+bh_curve:
+  - [0, 0]
+  - [398, 0.08]
+  - [796, 0.10]
+  - [1989, 0.12]
+  - [7958, 0.15]
+  - [15915, 0.16]
+  - [27852, 0.17]
+  - [39789, 0.19]
+  - [71620, 0.23]
+  - [111408, 0.29]
+  - [151197, 0.34]
+  - [190986, 0.40]

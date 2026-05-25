@@ -1,6 +1,6 @@
 # LoudspeakerFEA — API Reference
 
-**Version:** 0.1.2  
+**Version:** 0.1.3  
 **Module:** `src.api`
 
 All public functions are exported from `src.api`.  These are the only entry points that AI agents and the UI should use.
@@ -276,7 +276,21 @@ print(d.bl)
 
 ---
 
+### `find_elmer_executable() -> str`
 
+Search common Elmer installation paths and return the first existing `ElmerSolver.exe`. Also checks the system `PATH` via `shutil.which`.
+
+**Returns:**
+- Absolute path to the executable, or `"ElmerSolver.exe"` if none is found.
+
+**Example:**
+```python
+from src.api import find_elmer_executable
+exe = find_elmer_executable()
+print(exe)  # C:\Users\terav\ElmerFEM\bin\ElmerSolver.exe
+```
+
+---
 
 ### `generate_density_plot(vtu_path: str | Path, design: LoudspeakerDesign, output_path: str | Path) -> None`
 
@@ -548,7 +562,7 @@ __all__ = [
     "get_former_density",
     "run_elmer_simulation",
     "run_elmer_solver",
-
+    "find_elmer_executable",
     "parse_elmer_output",
     "generate_density_plot",
     "export_blx_csv",

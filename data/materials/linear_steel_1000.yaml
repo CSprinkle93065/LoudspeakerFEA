@@ -1,0 +1,3 @@
+name: "Linear Steel 1000"
+type: linear
+relative_permeability: 1000

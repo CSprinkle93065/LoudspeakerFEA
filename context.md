@@ -1,79 +1,37 @@
-# LoudspeakerFEA — Project Context
+# Project Context: LoudspeakerFEA
 
-**Version:** 0.1.1  
-**GitHub Repository:** https://github.com/CSprinkle93065/LoudspeakerFEA  
-**Release Stage:** Stage 8 — Release  
-**Workflow ID:** wvc_20260524_175500  
-**Date:** 2026-05-25  
+**Current Version:** 0.1.2
+**GitHub Repository:** https://github.com/CSprinkle93065/LoudspeakerFEA
+**Release Stage:** pre-release
+**Git Branch:** main
+**Last Updated:** 2026-05-25
 
----
-
-## Overview
+## What This Version Contains
 
 LoudspeakerFEA is a Finite Element Analysis (FEA) augmented desktop application that simulates traditional ceramic magnet woofer motors. It duplicates the functionality of the `[FEMotor]` worksheet in the reference Excel workbook, including all parametric calculations, voice-coil characterization, motor geometry derivation, loudspeaker parameter estimation, BL-versus-displacement curves, and side-leakage analysis.
 
-The program drives the open-source **ElmerFEM** engine to perform the magnetic-field simulation and extracts results for display and further calculation.
+The program drives the open-source **ElmerFEM** engine to perform the magnetic-field simulation and extracts results for display and further calculation. In v0.1.2, the ElmerSolver "STOP 1" error is resolved by removing the ImportError fallback and fake zero-node mesh. The real Gmsh → Elmer → VTU pipeline is now called unconditionally, and all version strings are updated to v0.1.2.
 
-## Derived From
+## Version History
 
-- **MotorModel v0.1.12** — Base functionality and UI layout pattern
-- **LoudspeakerDesigner** — UI pattern (left panel scrollable groups, right panel tabs)
+| Version | Type | Date | Summary |
+|---------|------|------|---------|
+| 0.1.2 | bug_fix | 2026-05-25 | Fix ElmerSolver STOP 1 — remove fake mesh fallback, unconditionally call real pipeline |
+| 0.1.1 | bug_fix | 2026-05-24 | Attempted Elmer pipeline integration (bug unresolved) |
+| 0.1.0 | new_project | 2026-05-24 | Initial pre-release |
 
-## Key Changes from MotorModel
+## Open Work Items
+None
 
-1. **Replaced FEMM with ElmerFEM** — Elmer SIF generation, mesh creation, solver invocation, and VTU/EP output parsing replace FEMM Lua macros and file formats.
-2. **Setup menu updated for Elmer** — Controls: Elmer executable path, working directory, mesh size factor, show processor option.
-3. **Removed bucking magnet inputs from UI** — Fields remain in data model (default `0.0`) for backward compatibility but are hidden.
-4. **FEA Geometry plot scaling** — B-field density plot uses a fixed scale of 0–2 T with decimal tick labels (no scientific notation).
-
-## Technology Stack
-
-- Python 3.11+ (64-bit)
-- PyQt6 6.6+
-- SQLite 3.39+
-- matplotlib 3.8+
-- ElmerFEM (external dependency)
-- pytest 8.0+
-- PyInstaller 6.0+
-
-## Project Structure
-
-```
-LoudspeakerFEA/
-├── src/
-│   ├── main_window.py      # PyQt6 UI
-│   ├── models.py           # LoudspeakerDesign dataclass
-│   ├── elmer_integration.py # Elmer SIF/mesh/solver interface
-│   ├── engine.py           # Calculation engine (Excel formulas)
-│   ├── api.py              # Public API surface
-│   ├── database.py         # SQLite persistence
-│   └── main.py             # Application entry point
-├── tests/                  # Unit and integration tests
-├── docs/                   # Definition, API reference, QA results
-├── dist/                   # PyInstaller distribution (not in git)
-└── build/                  # PyInstaller build artifacts (not in git)
-```
-
-## API Entry Points
+## Definition Summary
 
 All agent-accessible functions are exported from `src.api`:
 
-- Design lifecycle: `create_design`, `save_design`, `load_design`, `list_designs`, `delete_design`, `clone_design`, `switch_active_design`
-- Calculation: `update_design_parameter`, `recalculate_derived`, `get_wire_properties`, `get_former_density`
-- Elmer Simulation: `run_elmer_simulation`, `generate_elmer_input_files`, `parse_elmer_output`
-- Export: `export_blx_csv`, `export_side_leakage_csv`, `export_results_json`
-- Comparison: `compare_designs`
-- Utility: `init_database`, `set_elmer_executable_path`, `set_working_directory`, `get_default_values`
+- **Design lifecycle:** `create_design`, `save_design`, `load_design`, `list_designs`, `delete_design`, `clone_design`, `switch_active_design`
+- **Calculation:** `update_design_parameter`, `recalculate_derived`, `get_wire_properties`, `get_former_density`
+- **Elmer Simulation:** `run_elmer_simulation`, `generate_elmer_input_files`, `parse_elmer_output`
+- **Export:** `export_blx_csv`, `export_side_leakage_csv`, `export_results_json`
+- **Comparison:** `compare_designs`
+- **Utility:** `init_database`, `set_elmer_executable_path`, `set_working_directory`, `get_default_values`
 
-## Release Notes
-
-### v0.1.1 (pre-release)
-Bug fix: ElmerSolver "STOP 1" error resolved by integrating the real Gmsh geometry builder, Elmer SIF generator, and VTK post-processor pipeline.
-Distribution zip attached to the GitHub release.
-
-### v0.1.0 (pre-release)
-Initial pre-release. The distribution zip is attached to the GitHub release.
-
----
-
-*Generated during Stage 8 — Release*
+**Technology Stack:** Python 3.11+, PyQt6 6.6+, SQLite 3.39+, matplotlib 3.8+, ElmerFEM (external), pytest 8.0+, PyInstaller 6.0+.

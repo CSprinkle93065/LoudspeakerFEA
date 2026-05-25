@@ -1,9 +1,9 @@
 # LoudspeakerFEA — Test Plan
 
-**Version:** 0.1.0
-**Workflow ID:** wvc_20260524_140930
+**Version:** 0.1.3
+**Workflow ID:** wvc_20260525_033245
 **Stage:** 3 — Test Plan Creation
-**Date:** 2026-05-24
+**Date:** 2026-05-25
 
 ---
 
@@ -12,10 +12,17 @@
 This test plan covers all **User Actions** defined in `definition.md` (§3) and all **API functions** listed in the API Function List (§5).
 Tests are exercised via **direct API function calls** — no UI automation. Visual and layout correctness is explicitly excluded and deferred to User Assessment.
 
+### Testing Strategy
+
+Tests are organized in two tiers:
+
+- **Unit tests**: Fast, mocked, run in CI. These verify API contracts, formula accuracy, database CRUD, and Elmer pipeline orchestration without requiring external solver installations.
+- **Integration smoke tests**: Exercise real dependencies (`gmsh`, `pyelmer`, `meshio`, `scipy`, `vtk`, `ElmerSolver.exe`) with timeout protection and minimal geometry. These catch missing-dependency bugs that mock-based tests cannot detect.
+
 ### Exclusions
 - UI widget positioning, color, or font assertions.
 - matplotlib plot pixel-level verification.
-- ElmerSolver execution in CI (mocked instead).
+- Live Elmer simulations are marked `pytest.mark.slow` and run only in integration/validation mode. Unit tests remain mocked for speed.
 
 ---
 
@@ -28,7 +35,8 @@ Tests are exercised via **direct API function calls** — no UI automation. Visu
 | `test_api.py` | Design lifecycle, export, comparison, settings | 16 |
 | `test_elmer_integration.py` | SIF generation, output parsing, mocked solver | 8 |
 | `test_persistence.py` | SQLite schema, CRUD, settings persistence | 8 |
-| **Total** | | **65** |
+| `test_integration_smoke.py` | Real dependency verification, mesh generation, end-to-end pipeline | 5 |
+| **Total** | | **70** |
 
 ---
 
@@ -39,7 +47,8 @@ Every User Action from `definition.md` §3 has at least one deterministic test c
 | User Action | API Function(s) | Test Case ID | Location |
 |-------------|-----------------|--------------|----------|
 | 3.1 / 3.1a Change input parameter | `update_design_parameter` | TC-01 | `test_api.py` |
-| 3.2 Run Elmer Simulation | `run_elmer_simulation` | TC-02 | `test_elmer_integration.py` |
+| 3.2 Run Elmer Simulation | `run_elmer_simulation` | TC-02, TC-E03 | `test_elmer_integration.py` |
+| 3.2 Run Elmer Simulation (integration) | `run_elmer_simulation` | TC-I05 | `test_integration_smoke.py` |
 | 3.3 New Design | `create_design`, `get_default_values` | TC-03 | `test_api.py` |
 | 3.4 Save Design | `save_design` | TC-04 | `test_persistence.py` |
 | 3.5 Load Design | `load_design` | TC-05 | `test_persistence.py` |
@@ -72,7 +81,7 @@ Every API function from `definition.md` §5 has at least one test case.
 | `recalculate_derived` | TC-15 | `test_engine.py` |
 | `get_wire_properties` | TC-19 | `test_engine.py` |
 | `get_former_density` | TC-20 | `test_engine.py` |
-| `run_elmer_simulation` | TC-02 | `test_elmer_integration.py` |
+| `run_elmer_simulation` | TC-02, TC-E03, TC-I05 | `test_elmer_integration.py`, `test_integration_smoke.py` |
 | `generate_elmer_input_files` | TC-21 | `test_elmer_integration.py` |
 | `parse_elmer_output` | TC-22 | `test_elmer_integration.py` |
 | `export_blx_csv` | TC-07 | `test_api.py` |
@@ -83,6 +92,8 @@ Every API function from `definition.md` §5 has at least one test case.
 | `set_elmer_executable_path` | TC-12 | `test_api.py` |
 | `set_working_directory` | TC-13 | `test_api.py` |
 | `get_default_values` | TC-18 | `test_api.py` |
+| `find_elmer_executable` | TC-I04 | `test_integration_smoke.py` |
+| `build_geometry` | TC-I01, TC-I03 | `test_integration_smoke.py` |
 
 ---
 
@@ -274,7 +285,7 @@ Every API function from `definition.md` §5 has at least one test case.
 #### TC-02: `test_run_elmer_simulation_mocked`
 - **API:** `run_elmer_simulation(design, show_window=False)` with mocked `subprocess.run`
 - **Assert:** `design.fea_b is not None`, `len(design.bl_x_data) == 61`, `len(design.side_leakage_data) == 100`
-- **Coverage:** User Action 3.2
+- **Coverage:** User Action 3.2 (unit / mocked)
 
 #### TC-03: `test_create_design`
 - **API:** `create_design(name="Test")`
@@ -392,39 +403,46 @@ All tests mock `subprocess.run`, `subprocess.Popen`, and file-system operations.
 
 ---
 
-### 5.5 Persistence Tests (`test_persistence.py`)
+### 5.5 Integration Smoke Tests (`test_integration_smoke.py`)
 
-#### TC-P01: `test_init_database_creates_file`
-- **API:** `init_database(str(db_path))`
-- **Assert:** `db_path.exists()`
+These tests exercise **real dependencies** and the **live Elmer pipeline**. They are intended to catch missing-dependency bugs that mock-based tests cannot detect. Run with `pytest -m "not slow"` to skip the slow end-to-end test.
 
-#### TC-P02: `test_init_database_creates_designs_table`
-- **API:** `init_database(str(db_path))`
-- **Assert:** SQLite query `"SELECT name FROM sqlite_master WHERE type='table'"` contains `"designs"`.
+#### TC-I01: `test_gmsh_importable_when_build_geometry_called`
+- **API:** `build_geometry(design, str(tmp_path))` with a minimal design
+- **Assert:** Does NOT raise `ImportError` for `gmsh`
+- **Purpose:** Catches missing `gmsh` installation BEFORE trying to run a full simulation
+- **Timeout:** 30 seconds max
+- **Skip condition:** None — test FAILS with a clear message if `gmsh` is missing
+- **PASS:** `result_path.exists()` and no `ImportError` raised
 
-#### TC-P03: `test_init_database_creates_settings_table`
-- **API:** `init_database(str(db_path))`
-- **Assert:** SQLite query returns `"settings"`.
+#### TC-I02: `test_pyelmer_and_meshio_importable_for_solve`
+- **API:** `import pyelmer; import meshio`
+- **Assert:** Both modules import without error
+- **Purpose:** Catches missing `pyelmer`/`meshio` before solver stage
+- **PASS:** `pyelmer_module is not None` and `meshio_module is not None`
 
-#### TC-P04: `test_save_design_persists_json`
-- **API:** `save_design(design)` then raw SQLite query.
-- **Assert:** `json` column contains serialized design data.
+#### TC-I03: `test_real_build_geometry_creates_mesh_file`
+- **API:** `build_geometry(design, str(tmp_path))` with Design 1 defaults
+- **Assert:** Returns a valid `Path`, file exists, non-zero size
+- **Purpose:** Verifies Gmsh can actually generate a mesh (not just import)
+- **Timeout:** 60 seconds max
+- **Skip:** `pytest.importorskip("gmsh")` — skip only if `gmsh` is not installed
+- **PASS:** `msh_path.exists() and msh_path.stat().st_size > 0`
 
-#### TC-P05: `test_load_design_retrieves_all_fields`
-- **API:** `load_design(design_id)`
-- **Assert:** All input and derived fields match original.
+#### TC-I04: `test_real_elmer_solver_executable_found`
+- **API:** `find_elmer_executable()`
+- **Assert:** Executable file exists and is readable
+- **Purpose:** Catches missing ElmerFEM installation
+- **PASS:** `os.path.isfile(exe_path) and os.access(exe_path, os.R_OK)`
 
-#### TC-P06: `test_delete_design_removes_record`
-- **API:** `delete_design(design_id)`
-- **Assert:** Raw query returns zero rows for that ID.
-
-#### TC-P07: `test_settings_persist_elmer_path`
-- **API:** `set_elmer_executable_path(path)` then query settings table.
-- **Assert:** Value matches path.
-
-#### TC-P08: `test_settings_persist_working_directory`
-- **API:** `set_working_directory(path)` then query settings table.
-- **Assert:** Value matches path.
+#### TC-I05: `test_run_elmer_simulation_integration_smoke`
+- **API:** `run_elmer_simulation(design, show_window=False)` with Design 1 defaults
+- **Assert:** Returns updated design with `fea_b > 0`, `len(bl_x_data) == 61`
+- **Purpose:** End-to-end integration test of the FULL pipeline
+- **Timeout:** 300 seconds (5 minutes) max
+- **Requirements:** `gmsh`, `pyelmer`, `meshio`, `scipy`, `vtk`, `ElmerSolver.exe` must all be present
+- **Skip:** Marked `pytest.mark.slow`; skipped in fast CI, but MANDATORY for release validation
+- **PASS:** `result.fea_b > 0` and `len(result.bl_x_data) == 61`
 
 ---
 
@@ -432,9 +450,9 @@ All tests mock `subprocess.run`, `subprocess.Popen`, and file-system operations.
 
 | Gate | Verification Method | Result |
 |------|---------------------|--------|
-| **G3.1** Every User Action has >=1 test case | Checked in section 3 mapping table. All 14 actions covered. | **PASS** |
-| **G3.2** Every test case has explicit API signature + pytest assertion | Checked in section 5 detailed cases. Each lists API call and assert expression. | **PASS** |
-| **G3.3** No uncovered User Action | All 14 actions map to API functions; 3.14 is UI-only and verified negatively. | **PASS** |
+| **G3.1** Every User Action has >=1 test case | Checked in section 3 mapping table. All 14 actions covered. TC-I05 provides real integration coverage for User Action 3.2. | **PASS** |
+| **G3.2** Every test case has explicit API signature + pytest assertion | Checked in section 5 detailed cases. Each lists API call and assert expression. Integration tests include exact function signatures and executable assertions. | **PASS** |
+| **G3.3** No uncovered User Action | All 14 actions map to API functions; 3.14 is UI-only and verified negatively. All API functions used by User Actions are listed in §4. | **PASS** |
 
 ---
 
@@ -448,6 +466,7 @@ All tests mock `subprocess.run`, `subprocess.Popen`, and file-system operations.
 | `tests/test_api.py` | 16 API lifecycle, export, comparison, and settings tests |
 | `tests/test_elmer_integration.py` | 8 mock-based Elmer SIF/output tests |
 | `tests/test_persistence.py` | 8 SQLite schema, CRUD, and settings persistence tests |
+| `tests/test_integration_smoke.py` | 5 real-dependency smoke tests (gmsh, pyelmer, meshio, ElmerSolver, end-to-end pipeline) |
 
 ---
 

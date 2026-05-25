@@ -1,0 +1,4 @@
+name: NdFe38 High Temp
+type: linear_permanent_magnet
+relative_permeability: 1.045
+magnetization_A_m: 960000

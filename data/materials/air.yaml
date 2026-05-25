@@ -1,0 +1,4 @@
+name: Air
+type: linear
+relative_permeability: 1.0
+magnetization_A_m: 0
