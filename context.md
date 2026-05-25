@@ -1,6 +1,6 @@
 # Project Context: LoudspeakerFEA
 
-**Current Version:** 0.1.5
+**Current Version:** 0.1.6
 **GitHub Repository:** https://github.com/CSprinkle93065/LoudspeakerFEA
 **Release Stage:** release
 **Git Branch:** main
@@ -16,6 +16,7 @@ The program drives the open-source **ElmerFEM** engine to perform the magnetic-f
 
 | Version | Type | Date | Summary |
 |---------|------|------|---------|
+| 0.1.6 | bug_fix | 2026-05-25 | Add motor geometry overlays to density plot; fix coil_air region bounds |
 | 0.1.5 | bug_fix | 2026-05-25 | Fix motor geometry zoom, BL(x) sweep alignment, button busy state |
 | 0.1.4 | bug_fix | 2026-05-25 | Fix FEA Geometry image display — use working_directory instead of temp folder |
 | 0.1.3 | bug_fix | 2026-05-25 | Fix Elmer/Gmsh integration — install dependencies, add integration smoke tests, bundle material data |
