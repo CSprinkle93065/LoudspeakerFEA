@@ -1,8 +1,8 @@
 # Project Context: LoudspeakerFEA
 
-**Current Version:** 0.1.3
+**Current Version:** 0.1.4
 **GitHub Repository:** https://github.com/CSprinkle93065/LoudspeakerFEA
-**Release Stage:** pre-release
+**Release Stage:** release
 **Git Branch:** main
 **Last Updated:** 2026-05-25
 
@@ -10,12 +10,13 @@
 
 LoudspeakerFEA is a Finite Element Analysis (FEA) augmented desktop application that simulates traditional ceramic magnet woofer motors. It duplicates the functionality of the `[FEMotor]` worksheet in the reference Excel workbook, including all parametric calculations, voice-coil characterization, motor geometry derivation, loudspeaker parameter estimation, BL-versus-displacement curves, and side-leakage analysis.
 
-The program drives the open-source **ElmerFEM** engine to perform the magnetic-field simulation and extracts results for display and further calculation. In v0.1.3, the Elmer/Gmsh integration is fully resolved by installing all missing Python dependencies (gmsh, pyelmer, meshio, scipy, vtk), bundling material data files, adding integration smoke tests that exercise the real Gmsh → Elmer → VTU pipeline, and removing hardcoded user-specific paths.
+The program drives the open-source **ElmerFEM** engine to perform the magnetic-field simulation and extracts results for display and further calculation. In v0.1.4, the FEA Geometry tab now correctly displays the B-Field density plot after running Elmer simulation by saving the image to the working directory instead of a temporary folder.
 
 ## Version History
 
 | Version | Type | Date | Summary |
 |---------|------|------|---------|
+| 0.1.4 | bug_fix | 2026-05-25 | Fix FEA Geometry image display — use working_directory instead of temp folder |
 | 0.1.3 | bug_fix | 2026-05-25 | Fix Elmer/Gmsh integration — install dependencies, add integration smoke tests, bundle material data |
 | 0.1.2 | bug_fix | 2026-05-25 | Fix ElmerSolver STOP 1 — remove fake mesh fallback, unconditionally call real pipeline |
 | 0.1.1 | bug_fix | 2026-05-24 | Attempted Elmer pipeline integration (bug unresolved) |
