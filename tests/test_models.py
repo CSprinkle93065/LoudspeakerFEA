@@ -20,6 +20,14 @@ def test_loudspeaker_design_dataclass_exists():
     assert instance is not None
 
 
+def test_mesh_size_factor_default():
+    """TC-M06: Default mesh_size_factor is 0.24 (bug fix v0.1.7)."""
+    design = LoudspeakerDesign()
+    assert design.mesh_size_factor == 0.24
+    design_api = get_default_values()
+    assert design_api.mesh_size_factor == 0.24
+
+
 def test_default_values_match_design1():
     """TC-M02: Default field values match Design 1 from the reference spreadsheet."""
     design = get_default_values()

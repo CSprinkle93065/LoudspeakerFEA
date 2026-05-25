@@ -47,7 +47,7 @@ class LoudspeakerDesign:
     # ─── Setup Information (Elmer) ───
     elmer_solver_path: str = "ElmerSolver.exe"
     working_directory: str = field(default_factory=_default_working_directory)
-    mesh_size_factor: float = 1.0
+    mesh_size_factor: float = 0.24
     show_processor: int = 0
     magnet_material: str = "Ceramic5"
 
