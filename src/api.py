@@ -237,7 +237,7 @@ __all__ = [
     # Elmer
     "run_elmer_simulation",
     "run_elmer_solver",
-
+    "find_elmer_executable",
     "parse_elmer_output",
     "generate_density_plot",
     # Export

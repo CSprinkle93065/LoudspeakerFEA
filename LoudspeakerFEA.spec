@@ -17,7 +17,9 @@ a = Analysis(
     [str(project_root / "src" / "main.py")],
     pathex=[str(project_root)],
     binaries=[],
-    datas=[],
+    datas=[
+        (str(project_root / "data" / "materials"), "data/materials"),
+    ],
     hiddenimports=[
         # PyQt6
         "PyQt6",
@@ -44,10 +46,17 @@ a = Analysis(
         "subprocess",
         "shutil",
         "tempfile",
-        # Optional Elmer-related (imported conditionally in try/except)
+        # Elmer pipeline dependencies
         "numpy",
         "scipy",
+        "scipy.interpolate",
         "meshio",
+        "gmsh",
+        "pyelmer",
+        "pyelmer.elmer",
+        "pyelmer.execute",
+        "vtk",
+        "yaml",
         # Application modules (ensure they are packed)
         "src",
         "src.models",

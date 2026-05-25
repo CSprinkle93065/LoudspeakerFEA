@@ -164,7 +164,10 @@ def generate_sif(
     if elmergrid is None:
         elmergrid = _find_executable(
             "ElmerGrid",
-            [r"C:\Users\terav\ElmerFEM\bin\ElmerGrid.exe"],
+            [
+                r"C:\Program Files\ElmerFEM\bin\ElmerGrid.exe",
+                r"C:\Program Files (x86)\ElmerFEM\bin\ElmerGrid.exe",
+            ],
         )
 
     # Mesh conversion
@@ -402,7 +405,10 @@ def build_and_solve(
     if elmersolver is None:
         elmersolver = _find_executable(
             "ElmerSolver",
-            [r"C:\Users\terav\ElmerFEM\bin\ElmerSolver.exe"],
+            [
+                r"C:\Program Files\ElmerFEM\bin\ElmerSolver.exe",
+                r"C:\Program Files (x86)\ElmerFEM\bin\ElmerSolver.exe",
+            ],
         )
 
     # Generate SIF + mesh files
