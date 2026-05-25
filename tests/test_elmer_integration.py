@@ -1,7 +1,7 @@
 """Tests for Elmer integration API functions.
 
-Covers: generate_elmer_input_files, parse_elmer_output,
-run_elmer_simulation (mocked), SIF content verification, error handling.
+Covers: parse_elmer_output, run_elmer_simulation (mocked pipeline),
+error handling, and bug-fix verification.
 
 All subprocess and file-system calls are mocked — no Elmer installation required.
 """
@@ -14,18 +14,8 @@ import pytest
 
 from src.api import (
     create_design, run_elmer_simulation,
-    generate_elmer_input_files, parse_elmer_output,
+    parse_elmer_output,
 )
-
-
-def test_generate_elmer_input_files(tmp_path: Path):
-    """TC-21: Generate Elmer Input Files — SIF and mesh directory written."""
-    design = create_design()
-    sif_path, mesh_dir = generate_elmer_input_files(design, str(tmp_path))
-    assert Path(sif_path).exists()
-    assert Path(mesh_dir).exists()
-    sif_text = Path(sif_path).read_text()
-    assert "MagnetoDynamics2D" in sif_text
 
 
 def test_parse_elmer_output(tmp_path: Path):
@@ -51,59 +41,63 @@ def test_parse_elmer_output(tmp_path: Path):
 
 
 def test_run_elmer_simulation_mocked(tmp_path: Path):
-    """TC-02: Run Elmer Simulation — mocked solver; design fields populated."""
+    """TC-02: Run Elmer Simulation — mocked pipeline; design fields populated."""
     design = create_design()
     design.working_directory = str(tmp_path)
-    vc_file = tmp_path / "VCSweepOutput.txt"
-    vc_content = (
-        "B(x=0) = 1.234\n"
-        "dataPoints = 61\n"
-        "Bmagnet = 0.987\n"
-        "VC Position  B_avg\n"
-    )
-    for i in range(61):
-        vc_content += f"{i-30}  {1.234 + i * 0.001}\n"
-    vc_content += "B(x) dataPoints\n"
-    vc_file.write_text(vc_content)
-    leak_file = tmp_path / "leakage contour.txt"
-    leak_file.write_text("\n".join(str(0.01 * i) for i in range(100)))
-    with patch("src.elmer_integration.subprocess.run") as mock_run:
-        mock_run.return_value = MagicMock(returncode=0)
-        design = run_elmer_simulation(design, show_window=False)
-    assert design.fea_b is not None
-    assert len(design.bl_x_data) == 61
-    assert len(design.side_leakage_data) == 100
-    assert design.primary_magnet_avg_b is not None
-    assert design.bl is not None
-    assert design.bl > 0
+
+    mock_vc_results = {
+        "b_at_zero": 1.234,
+        "data_points": 61,
+        "bmagnet": 0.987,
+        "bbuck": 0.0,
+        "vc_sweep": [(float(i - 30), 1.234 + i * 0.001) for i in range(61)],
+        "raw_b": [(float(i - 30), 1.234 + i * 0.001) for i in range(61)],
+    }
+    mock_side_leakage = [0.01 * i for i in range(100)]
+    mock_parsed = {
+        "b_at_zero": 1.234,
+        "data_points": 61,
+        "bmagnet": 0.987,
+        "bbuck": 0.0,
+        "vc_sweep": mock_vc_results["vc_sweep"],
+        "raw_b": mock_vc_results["raw_b"],
+        "side_leakage": mock_side_leakage,
+    }
+
+    with patch("src.elmer_integration.build_geometry") as mock_build_geometry, \
+         patch("src.elmer_integration.build_and_solve") as mock_build_and_solve, \
+         patch("src.elmer_integration.extract_vc_sweep") as mock_extract_vc_sweep, \
+         patch("src.elmer_integration.extract_side_leakage") as mock_extract_side_leakage, \
+         patch("src.elmer_integration.write_output_files") as mock_write_output_files, \
+         patch("src.elmer_integration.generate_density_plot") as mock_density_plot, \
+         patch("src.elmer_integration.parse_elmer_output") as mock_parse_output:
+
+        mock_build_geometry.return_value = str(tmp_path / "motor.msh")
+        mock_build_and_solve.return_value = tmp_path / "case.vtu"
+        mock_extract_vc_sweep.return_value = mock_vc_results
+        mock_extract_side_leakage.return_value = mock_side_leakage
+        mock_parse_output.return_value = mock_parsed
+
+        result = run_elmer_simulation(design, show_window=False)
+
+    assert result.fea_b is not None
+    assert len(result.bl_x_data) == 61
+    assert len(result.side_leakage_data) == 100
+    assert result.primary_magnet_avg_b is not None
+    assert result.bl is not None
+    assert result.bl > 0
 
 
-def test_sif_contains_correct_materials(tmp_path: Path):
-    """TC-E04: SIF contains Air, China Steel, and selected magnet material definitions."""
-    design = create_design()
-    design.magnet_material = "Ceramic5"
-    sif_path, _ = generate_elmer_input_files(design, str(tmp_path))
-    sif_text = Path(sif_path).read_text()
-    assert "Material 1" in sif_text
-    assert "China Steel" in sif_text
-    assert "Ceramic5" in sif_text
-
-
-def test_sif_no_bucking_magnet(tmp_path: Path):
-    """TC-E05: SIF does not contain bucking magnet geometry or material."""
-    design = create_design()
-    sif_path, _ = generate_elmer_input_files(design, str(tmp_path))
-    sif_text = Path(sif_path).read_text()
-    assert "Bucking" not in sif_text
-    assert "secondary_magnet" not in sif_text.lower()
-
-
-def test_missing_elmer_executable_raises():
-    """TC-E06: run_elmer_simulation raises when executable path is invalid."""
+def test_missing_elmer_executable_raises(tmp_path: Path):
+    """TC-E06: run_elmer_simulation raises when solver executable is invalid."""
     design = create_design()
     design.elmer_solver_path = r"C:\NonExistent\ElmerSolver.exe"
-    with pytest.raises((RuntimeError, FileNotFoundError)):
-        run_elmer_simulation(design)
+    with patch("src.elmer_integration.build_geometry") as mock_build, \
+         patch("src.elmer_integration.build_and_solve") as mock_solve:
+        mock_build.return_value = str(tmp_path / "motor.msh")
+        mock_solve.side_effect = FileNotFoundError("ElmerSolver not found")
+        with pytest.raises((RuntimeError, FileNotFoundError)):
+            run_elmer_simulation(design)
 
 
 def test_missing_output_files_raises(tmp_path: Path):
@@ -118,15 +112,32 @@ def test_secondary_magnet_avg_b_is_na(tmp_path: Path):
     assert design.secondary_magnet_avg_b in ("N/A", 0, 0.0)
     # After mocked simulation it should be "N/A"
     design.working_directory = str(tmp_path)
-    vc_file = tmp_path / "VCSweepOutput.txt"
-    vc_file.write_text(
-        "B(x=0) = 1.0\ndataPoints = 1\nBmagnet = 1.0\n0  1.0\n"
-    )
-    leak_file = tmp_path / "leakage contour.txt"
-    leak_file.write_text("0.01")
-    with patch("src.elmer_integration.run_elmer_solver") as mock_solver:
-        mock_solver.return_value = None
+
+    mock_parsed = {
+        "b_at_zero": 1.0,
+        "data_points": 1,
+        "bmagnet": 1.0,
+        "bbuck": 0.0,
+        "vc_sweep": [(0.0, 1.0)],
+        "raw_b": [(0.0, 1.0)],
+        "side_leakage": [0.01],
+    }
+
+    with patch("src.elmer_integration.build_geometry") as mock_build, \
+         patch("src.elmer_integration.build_and_solve") as mock_solve, \
+         patch("src.elmer_integration.extract_vc_sweep") as mock_vc, \
+         patch("src.elmer_integration.extract_side_leakage") as mock_leak, \
+         patch("src.elmer_integration.write_output_files"), \
+         patch("src.elmer_integration.generate_density_plot"), \
+         patch("src.elmer_integration.parse_elmer_output") as mock_parse:
+        mock_build.return_value = str(tmp_path / "motor.msh")
+        mock_solve.return_value = tmp_path / "case.vtu"
+        mock_vc.return_value = mock_parsed
+        mock_leak.return_value = mock_parsed["side_leakage"]
+        mock_parse.return_value = mock_parsed
+
         design = run_elmer_simulation(design, show_window=False)
+
     assert design.secondary_magnet_avg_b == "N/A"
 
 
@@ -195,11 +206,11 @@ def test_run_elmer_simulation_calls_real_pipeline(tmp_path: Path):
         "side_leakage": mock_side_leakage,
     }
 
-    with patch("src.geometry_builder.build_geometry") as mock_build_geometry, \
-         patch("src.elmer_solver.build_and_solve") as mock_build_and_solve, \
-         patch("src.post_processor.extract_vc_sweep") as mock_extract_vc_sweep, \
-         patch("src.post_processor.extract_side_leakage") as mock_extract_side_leakage, \
-         patch("src.post_processor.write_output_files") as mock_write_output_files, \
+    with patch("src.elmer_integration.build_geometry") as mock_build_geometry, \
+         patch("src.elmer_integration.build_and_solve") as mock_build_and_solve, \
+         patch("src.elmer_integration.extract_vc_sweep") as mock_extract_vc_sweep, \
+         patch("src.elmer_integration.extract_side_leakage") as mock_extract_side_leakage, \
+         patch("src.elmer_integration.write_output_files") as mock_write_output_files, \
          patch("src.elmer_integration.generate_density_plot") as mock_density_plot, \
          patch("src.elmer_integration.parse_elmer_output") as mock_parse_output:
 

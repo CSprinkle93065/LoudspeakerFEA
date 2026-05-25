@@ -28,7 +28,6 @@ from src.engine import (
 )
 from src.elmer_integration import (
     generate_density_plot,
-    generate_elmer_input_files,
     parse_elmer_output,
     run_elmer_simulation,
     run_elmer_solver,
@@ -139,7 +138,6 @@ def update_design_parameter(design: LoudspeakerDesign, field_name: str, value: f
 # so that tests can patch src.api.run_elmer_solver if needed.
 run_elmer_solver = run_elmer_solver
 run_elmer_simulation = run_elmer_simulation
-generate_elmer_input_files = generate_elmer_input_files
 parse_elmer_output = parse_elmer_output
 
 
@@ -239,7 +237,7 @@ __all__ = [
     # Elmer
     "run_elmer_simulation",
     "run_elmer_solver",
-    "generate_elmer_input_files",
+
     "parse_elmer_output",
     "generate_density_plot",
     # Export

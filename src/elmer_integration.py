@@ -1,75 +1,27 @@
-"""Elmer solver integration: SIF generation, mesh creation, solver invocation, and output parsing.
+"""Elmer solver integration: mesh creation, solver invocation, and output parsing.
 
 This module wraps the Elmer FEM pipeline and provides a drop-in replacement
-for MotorModel's FEMM integration.  It is designed to work without heavy
-external dependencies (gmsh, pyelmer, meshio, scipy) when only SIF generation
-and output parsing are required.
+for MotorModel's FEMM integration.
 """
 
 from __future__ import annotations
 
 import os
 import re
-import shutil
 import subprocess
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
+from src.geometry_builder import build_geometry
+from src.elmer_solver import build_and_solve
+from src.post_processor import extract_vc_sweep, extract_side_leakage, write_output_files
 from src.models import LoudspeakerDesign
 from src.engine import recalculate_derived
 
 
-# ─── Material helpers ────────────────────────────────────────────────────────
-
-_MAGNET_MATERIALS: dict[str, dict[str, Any]] = {
-    "Ceramic5": {"relative_permeability": 1.0, "coercivity": 190986.0},
-    "NdFe38": {"relative_permeability": 1.048, "coercivity": 950000.0},
-    "NdFe48": {"relative_permeability": 1.053, "coercivity": 1060000.0},
-    "NdFe35": {"relative_permeability": 1.090, "coercivity": 890000.0},
-    "NdFe38 High Temp": {"relative_permeability": 1.045, "coercivity": 960000.0},
-    "NdFe39 Super High Temp": {"relative_permeability": 1.050, "coercivity": 955000.0},
-    "NdFe38 Ultra High Temp": {"relative_permeability": 1.010, "coercivity": 995000.0},
-}
-
-_STEEL_MATERIAL: dict[str, Any] = {
-    "name": "China Steel",
-    "relative_permeability": 902.6,
-    "coercivity": 0.0,
-}
-
-_AIR_MATERIAL: dict[str, Any] = {
-    "name": "Air",
-    "relative_permeability": 1.0,
-    "coercivity": 0.0,
-}
-
-
 # ─── Public API ──────────────────────────────────────────────────────────────
-
-
-def generate_elmer_input_files(design: LoudspeakerDesign, directory: str) -> tuple[str, str]:
-    """Write the Elmer SIF file and generate the mesh directory in the given directory.
-
-    Returns
-    -------
-    (sif_path, mesh_directory_path)
-    """
-    output_dir = Path(directory)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Ensure derived fields are up to date
-    design = recalculate_derived(design)
-
-    # Create a minimal mesh directory structure (ElmerGrid compatible)
-    mesh_dir = output_dir / "mesh"
-    mesh_dir.mkdir(parents=True, exist_ok=True)
-
-    # Build SIF content
-    sif_path = output_dir / "spkr.sif"
-    sif_text = _build_sif(design, mesh_dir.name)
-    sif_path.write_text(sif_text, encoding="utf-8")
-
-    return str(sif_path), str(mesh_dir)
 
 
 def parse_elmer_output(directory: str) -> dict:
@@ -207,7 +159,7 @@ def run_elmer_simulation(design: LoudspeakerDesign, show_window: bool = False) -
         Motor design parameters.  Must have derived fields already
         populated (call :func:`src.engine.recalculate_derived` first).
     show_window:
-        If *True*, the solver console window may be shown (Windows only).
+        Ignored — kept for API compatibility with FEMM (Elmer is headless).
 
     Returns
     -------
@@ -220,92 +172,43 @@ def run_elmer_simulation(design: LoudspeakerDesign, show_window: bool = False) -
     """
     design = recalculate_derived(design)
 
-    # Try the real Gmsh → Elmer pipeline first.
-    # In environments where the heavy dependencies are installed this runs
-    # the full simulation.  When they are missing (test environments) we
-    # fall back to the backward-compatible path so that mock-based tests
-    # continue to pass.
-    try:
-        from src.geometry_builder import build_geometry
-        from src.elmer_solver import build_and_solve
-        from src.post_processor import extract_vc_sweep, extract_side_leakage, write_output_files
+    workdir = Path(tempfile.mkdtemp(prefix=f"elmer_run_{int(time.time())}_"))
 
-        import tempfile
-        import time
+    # 1. Build geometry (Gmsh)
+    mesh_path = build_geometry(design, str(workdir))
 
-        workdir = Path(tempfile.mkdtemp(prefix=f"elmer_run_{int(time.time())}_"))
+    # 2. Run solver (Elmer)
+    sim_dir = workdir / "sim"
+    vtu_path = build_and_solve(design, Path(mesh_path), sim_dir, elmersolver=design.elmer_solver_path)
 
-        # 1. Build geometry (Gmsh)
-        mesh_path = build_geometry(design, str(workdir))
+    # 3. Post-process
+    vc_results = extract_vc_sweep(vtu_path, design)
+    side_leakage = extract_side_leakage(vtu_path, design, n_points=100)
 
-        # 2. Run solver (Elmer)
-        sim_dir = workdir / "sim"
-        vtu_path = build_and_solve(design, Path(mesh_path), sim_dir)
+    # 4. Write output files (FEMM-compatible format)
+    write_output_files(workdir, vc_results, side_leakage, design)
 
-        # 3. Post-process
-        vc_results = extract_vc_sweep(vtu_path, design)
-        side_leakage = extract_side_leakage(vtu_path, design, n_points=100)
+    # 5. Density plot
+    plot_path = workdir / "B-Field.png"
+    generate_density_plot(vtu_path, design, plot_path)
 
-        # 4. Write output files (FEMM-compatible format)
-        write_output_files(workdir, vc_results, side_leakage, design)
+    # 6. Parse outputs and populate design
+    parsed = parse_elmer_output(workdir)
+    design.fea_b = parsed["b_at_zero"]
+    design.bl_x_data = [(pos, b * design.length_of_wire) for pos, b in parsed["vc_sweep"]]
+    design.side_leakage_data = [val * 10000.0 for val in parsed["side_leakage"]]
+    design.primary_magnet_avg_b = parsed["bmagnet"]
+    design.secondary_magnet_avg_b = "N/A"
 
-        # 5. Density plot
-        plot_path = workdir / "B-Field.png"
-        generate_density_plot(vtu_path, design, plot_path)
+    # 7. Build bl_pct_array and x_array for interpolation
+    if design.bl_x_data:
+        max_b = max(b for _, b in design.bl_x_data) if design.bl_x_data else 1.0
+        design.x_array = [pos for pos, _ in design.bl_x_data]
+        design.bl_pct_array = [b / max_b if max_b > 0 else 0.0 for _, b in design.bl_x_data]
 
-        # 6. Parse outputs and populate design
-        parsed = parse_elmer_output(workdir)
-        design.fea_b = parsed["b_at_zero"]
-        design.bl_x_data = [(pos, b * design.length_of_wire) for pos, b in parsed["vc_sweep"]]
-        design.side_leakage_data = [val * 10000.0 for val in parsed["side_leakage"]]
-        design.primary_magnet_avg_b = parsed["bmagnet"]
-        design.secondary_magnet_avg_b = "N/A"
-
-        # 7. Build bl_pct_array and x_array for interpolation
-        if design.bl_x_data:
-            max_b = max(b for _, b in design.bl_x_data) if design.bl_x_data else 1.0
-            design.x_array = [pos for pos, _ in design.bl_x_data]
-            design.bl_pct_array = [b / max_b if max_b > 0 else 0.0 for _, b in design.bl_x_data]
-
-        # 8. Recalculate derived
-        design = recalculate_derived(design)
-        return design
-
-    except ImportError:
-        # ── Fallback for test environments without heavy dependencies ──
-        directory = design.working_directory
-        Path(directory).mkdir(parents=True, exist_ok=True)
-
-        # Generate input files
-        sif_path, mesh_dir = generate_elmer_input_files(design, directory)
-
-        # Run solver
-        run_elmer_solver(sif_path, design.elmer_solver_path, show_window=show_window)
-
-        # Parse output files
-        output = parse_elmer_output(directory)
-
-        # Populate FEA-derived fields
-        design.fea_b = output["b_at_zero"]
-        design.bl_x_data = [(pos, b * design.length_of_wire) for pos, b in output["vc_sweep"]]
-        # Side-leakage unit conversion: 1 T = 10 000 G
-        design.side_leakage_data = [val * 10000.0 for val in output["side_leakage"]]
-        design.primary_magnet_avg_b = output["bmagnet"]
-        design.secondary_magnet_avg_b = "N/A"
-
-        # Build bl_pct_array and x_array for interpolation
-        if design.bl_x_data:
-            max_b = max(b for _, b in design.bl_x_data) if design.bl_x_data else 1.0
-            design.x_array = [pos for pos, _ in design.bl_x_data]
-            design.bl_pct_array = [b / max_b if max_b > 0 else 0.0 for _, b in design.bl_x_data]
-
-        # Trigger derived recalculation (BL, interpolation, loudspeaker params)
-        design = recalculate_derived(design)
-
-        return design
-
-
-# ─── Internal helpers ────────────────────────────────────────────────────────
+    # 8. Recalculate derived
+    design = recalculate_derived(design)
+    return design
 
 
 def generate_density_plot(vtu_path: str | Path, design: LoudspeakerDesign, output_path: str | Path) -> None:
@@ -387,162 +290,3 @@ def generate_density_plot(vtu_path: str | Path, design: LoudspeakerDesign, outpu
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(str(output_path), dpi=150)
     plt.close(fig)
-
-
-# ─── Internal helpers ────────────────────────────────────────────────────────
-
-
-def _build_sif(design: LoudspeakerDesign, mesh_dir_name: str) -> str:
-    """Construct a minimal but valid Elmer SIF for 2-D axisymmetric magnetostatics."""
-    magnet = _MAGNET_MATERIALS.get(design.magnet_material, _MAGNET_MATERIALS["Ceramic5"])
-
-    lines: list[str] = [
-        "Header",
-        f'  Mesh DB "{mesh_dir_name}"',
-        '  Include Path ""',
-        '  Results Directory ""',
-        "End",
-        "",
-        "Constants",
-        "  Permeability of Vacuum = 1.25663706e-6",
-        "End",
-        "",
-        "Simulation",
-        "  Coordinate System = Axi Symmetric",
-        "  Simulation Type = Steady State",
-        "  Steady State Max Iterations = 1",
-        '  Output File = "case.result"',
-        '  Post File = "case.vtu"',
-        "End",
-        "",
-        "Body 1",
-        "  Name = top_plate",
-        "  Body Force = 1",
-        "  Equation = 1",
-        "  Material = 2",
-        "End",
-        "",
-        "Body 2",
-        "  Name = magnet",
-        "  Body Force = 1",
-        "  Equation = 1",
-        "  Material = 3",
-        "End",
-        "",
-        "Body 3",
-        "  Name = back_plate",
-        "  Body Force = 1",
-        "  Equation = 1",
-        "  Material = 2",
-        "End",
-        "",
-        "Body 4",
-        "  Name = pole_piece",
-        "  Body Force = 1",
-        "  Equation = 1",
-        "  Material = 2",
-        "End",
-        "",
-        "Body 5",
-        "  Name = coil_air",
-        "  Body Force = 1",
-        "  Equation = 1",
-        "  Material = 1",
-        "End",
-        "",
-        "Body 6",
-        "  Name = near_air",
-        "  Body Force = 1",
-        "  Equation = 1",
-        "  Material = 1",
-        "End",
-        "",
-        "Body 7",
-        "  Name = far_air",
-        "  Body Force = 1",
-        "  Equation = 1",
-        "  Material = 1",
-        "End",
-        "",
-        "Material 1",
-        '  Name = "Air"',
-        f"  Relative Permeability = {_AIR_MATERIAL['relative_permeability']}",
-        "End",
-        "",
-        "Material 2",
-        f'  Name = "{_STEEL_MATERIAL['name']}"',
-        f"  Relative Permeability = {_STEEL_MATERIAL['relative_permeability']}",
-        "End",
-        "",
-        "Material 3",
-        f'  Name = "{design.magnet_material}"',
-        f"  Relative Permeability = {magnet['relative_permeability']}",
-        f"  Magnetization 2 = {magnet['coercivity']}",
-        "End",
-        "",
-        "Solver 1",
-        '  Equation = "MgDyn2D"',
-        '  Procedure = "MagnetoDynamics2D" "MagnetoDynamics2D"',
-        '  Variable = "Potential"',
-        "  Exec Solver = Always",
-        "  Stabilize = True",
-        "  Bubbles = False",
-        "  Lumped Mass Matrix = False",
-        "  Optimize Bandwidth = True",
-        "  Steady State Convergence Tolerance = 1e-5",
-        "  Nonlinear System Convergence Tolerance = 1e-7",
-        "  Nonlinear System Max Iterations = 20",
-        "  Nonlinear System Newton After Iterations = 3",
-        "  Nonlinear System Newton After Tolerance = 1e-3",
-        "  Nonlinear System Relaxation Factor = 1",
-        "  Linear System Solver = Iterative",
-        "  Linear System Iterative Method = BiCGStab",
-        "  Linear System Max Iterations = 500",
-        "  Linear System Convergence Tolerance = 1e-10",
-        "  Linear System Preconditioning = ILU1",
-        "  Linear System ILUT Tolerance = 1e-3",
-        "  Linear System Abort Not Converged = False",
-        "  Linear System Residual Output = 10",
-        "  Linear System Precondition Recompute = 1",
-        "End",
-        "",
-        "Solver 2",
-        '  Equation = "MgDynPost"',
-        '  Procedure = "MagnetoDynamics" "MagnetoDynamicsCalcFields"',
-        '  Potential Variable = "Potential"',
-        "  Calculate Magnetic Flux Density = Logical True",
-        "  Calculate Magnetic Field Strength = Logical True",
-        "  Exec Solver = Always",
-        "  Stabilize = True",
-        "  Bubbles = False",
-        "  Lumped Mass Matrix = False",
-        "  Optimize Bandwidth = True",
-        "  Steady State Convergence Tolerance = 1e-5",
-        "  Linear System Solver = Iterative",
-        "  Linear System Iterative Method = BiCGStab",
-        "  Linear System Max Iterations = 500",
-        "  Linear System Convergence Tolerance = 1e-10",
-        "  Linear System Preconditioning = ILU1",
-        "  Linear System ILUT Tolerance = 1e-3",
-        "  Linear System Abort Not Converged = False",
-        "  Linear System Residual Output = 10",
-        "  Linear System Precondition Recompute = 1",
-        "End",
-        "",
-        "Equation 1",
-        "  Name = main",
-        "  Active Solvers(2) = 1 2",
-        "End",
-        "",
-        "Boundary Condition 1",
-        "  Name = axis",
-        "  Potential = 0",
-        "End",
-        "",
-        "Boundary Condition 2",
-        "  Name = outer_boundary",
-        "  Infinity BC = True",
-        "End",
-    ]
-
-    return "\n".join(lines) + "\n"

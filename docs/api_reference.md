@@ -1,6 +1,6 @@
 # LoudspeakerFEA — API Reference
 
-**Version:** 0.1.0  
+**Version:** 0.1.2  
 **Module:** `src.api`
 
 All public functions are exported from `src.api`.  These are the only entry points that AI agents and the UI should use.
@@ -276,25 +276,7 @@ print(d.bl)
 
 ---
 
-### `generate_elmer_input_files(design: LoudspeakerDesign, directory: str) -> tuple[str, str]`
 
-Write the Elmer SIF file and generate the mesh directory in the given directory.
-
-**Parameters:**
-- `design` — The design to generate inputs for.
-- `directory` — Output directory path.
-
-**Returns:**
-- `(sif_path, mesh_directory_path)` — Absolute paths as strings.
-
-**Example:**
-```python
-from src.api import create_design, generate_elmer_input_files
-d = create_design()
-sif_path, mesh_dir = generate_elmer_input_files(d, r"C:\ElmerFEA")
-```
-
----
 
 ### `generate_density_plot(vtu_path: str | Path, design: LoudspeakerDesign, output_path: str | Path) -> None`
 
@@ -566,7 +548,7 @@ __all__ = [
     "get_former_density",
     "run_elmer_simulation",
     "run_elmer_solver",
-    "generate_elmer_input_files",
+
     "parse_elmer_output",
     "generate_density_plot",
     "export_blx_csv",

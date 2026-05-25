@@ -1,10 +1,10 @@
 # LoudspeakerFEA — Project Context
 
-**Version:** 0.1.0  
+**Version:** 0.1.1  
 **GitHub Repository:** https://github.com/CSprinkle93065/LoudspeakerFEA  
 **Release Stage:** Stage 8 — Release  
-**Workflow ID:** wvc_20260524_140930  
-**Date:** 2026-05-24  
+**Workflow ID:** wvc_20260524_175500  
+**Date:** 2026-05-25  
 
 ---
 
@@ -67,7 +67,12 @@ All agent-accessible functions are exported from `src.api`:
 
 ## Release Notes
 
-This is a pre-release (v0.1.0). The distribution zip is attached to the GitHub release.
+### v0.1.1 (pre-release)
+Bug fix: ElmerSolver "STOP 1" error resolved by integrating the real Gmsh geometry builder, Elmer SIF generator, and VTK post-processor pipeline.
+Distribution zip attached to the GitHub release.
+
+### v0.1.0 (pre-release)
+Initial pre-release. The distribution zip is attached to the GitHub release.
 
 ---
 

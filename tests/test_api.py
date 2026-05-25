@@ -202,8 +202,27 @@ def test_run_elmer_simulation_mocked(tmp_path: Path):
     vc_file.write_text(vc_content)
     leak_file = tmp_path / "leakage contour.txt"
     leak_file.write_text("\n".join(str(0.01 * i) for i in range(100)))
-    with patch("src.elmer_integration.run_elmer_solver") as mock_solver:
-        mock_solver.return_value = None
+    mock_parsed = {
+        "b_at_zero": 1.234,
+        "data_points": 61,
+        "bmagnet": 0.987,
+        "bbuck": 0.0,
+        "vc_sweep": [(float(i - 30), 1.234 + i * 0.001) for i in range(61)],
+        "raw_b": [(float(i - 30), 1.234 + i * 0.001) for i in range(61)],
+        "side_leakage": [0.01 * i for i in range(100)],
+    }
+    with patch("src.elmer_integration.build_geometry") as mock_build, \
+         patch("src.elmer_integration.build_and_solve") as mock_solve, \
+         patch("src.elmer_integration.extract_vc_sweep") as mock_vc, \
+         patch("src.elmer_integration.extract_side_leakage") as mock_leak, \
+         patch("src.elmer_integration.write_output_files"), \
+         patch("src.elmer_integration.generate_density_plot"), \
+         patch("src.elmer_integration.parse_elmer_output") as mock_parse:
+        mock_build.return_value = str(tmp_path / "motor.msh")
+        mock_solve.return_value = tmp_path / "case.vtu"
+        mock_vc.return_value = mock_parsed
+        mock_leak.return_value = mock_parsed["side_leakage"]
+        mock_parse.return_value = mock_parsed
         design = run_elmer_simulation(design, show_window=False)
     assert design.fea_b is not None
     assert len(design.bl_x_data) == 61
