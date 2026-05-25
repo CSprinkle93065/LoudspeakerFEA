@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LoudspeakerFEA v0.1.4")
+        self.setWindowTitle("LoudspeakerFEA v0.1.5")
         self.setMinimumSize(1280, 800)
 
         self._design = create_design(name="Design1")
@@ -286,9 +286,9 @@ class MainWindow(QMainWindow):
         # Group C: FEA
         group_c = QGroupBox("FEA")
         form_c = QFormLayout(group_c)
-        calc_btn = QPushButton("Calculate B (Run Elmer)")
-        calc_btn.clicked.connect(self._on_run_elmer)
-        form_c.addRow(calc_btn)
+        self._calc_btn = QPushButton("Calculate B (Run Elmer)")
+        self._calc_btn.clicked.connect(self._on_run_elmer)
+        form_c.addRow(self._calc_btn)
         self._out_fea_b = QLabel("0.0")
         form_c.addRow("FEA B (T)", self._out_fea_b)
         self._out_bl = QLabel("0.0")
@@ -510,7 +510,7 @@ class MainWindow(QMainWindow):
         self._refresh_all_outputs()
 
     def _on_about(self):
-        QMessageBox.about(self, "About LoudspeakerFEA", "LoudspeakerFEA v0.1.4\n\nFinite Element Analysis augmented desktop application for ceramic magnet woofer motor simulation.")
+        QMessageBox.about(self, "About LoudspeakerFEA", "LoudspeakerFEA v0.1.5\n\nFinite Element Analysis augmented desktop application for ceramic magnet woofer motor simulation.")
 
     def _on_browse_elmer(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -550,6 +550,8 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Show processor set to {val}")
 
     def _on_run_elmer(self):
+        self._calc_btn.setEnabled(False)
+        self._calc_btn.setText("Calculating...")
         self.statusBar().showMessage("Running Elmer simulation...")
         try:
             self._design = run_elmer_simulation(self._design, show_window=False)
@@ -558,6 +560,9 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Elmer Error", str(e))
             self.statusBar().showMessage("Elmer simulation failed")
+        finally:
+            self._calc_btn.setEnabled(True)
+            self._calc_btn.setText("Calculate B (Run Elmer)")
 
     def _sync_inputs_from_design(self):
         """Update all input widgets to match the current design."""

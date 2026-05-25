@@ -1,139 +1,37 @@
-# LoudspeakerFEA v0.1.4 — Code Review Report
+# Assessment: Code Review (Stage 5)
 
-**Workflow ID:** wvc_20260525_043839  
-**Reviewer:** Code Critic Agent  
-**Date:** 2026-05-25  
-**Scope:** Bug fix — FEA Geometry tab B-Field.png path mismatch
+**Verdict:** NO-GO
 
 ---
 
-## 1. Change Summary
+## Findings
 
-The root cause was that `run_elmer_simulation()` in `src/elmer_integration.py` saved the B-field density plot (`B-Field.png`) to a temporary directory created by `tempfile.mkdtemp()`, while the GUI (`src/main_window.py`) looked for the image in `design.working_directory`. The fix replaces the temporary directory with `design.working_directory` so both the writer and the reader use the same location.
+- [PASS] **G5.1 — All API functions present and correctly named** — Every function listed in `docs/definition.md` Section 5 is present in `src/api.py` with matching names: `create_design`, `save_design`, `load_design`, `list_designs`, `delete_design`, `clone_design`, `switch_active_design`, `update_design_parameter`, `recalculate_derived`, `get_wire_properties`, `get_former_density`, `run_elmer_simulation`, `generate_elmer_input_files`, `parse_elmer_output`, `export_blx_csv`, `export_side_leakage_csv`, `export_results_json`, `compare_designs`, `init_database`, `set_elmer_executable_path`, `set_working_directory`, `get_default_values`.
 
-### Files Modified
-| File | Change |
-|------|--------|
-| `src/elmer_integration.py` | `tempfile.mkdtemp()` replaced with `Path(design.working_directory)`; removed unused `tempfile` and `time` imports |
-| `src/main_window.py` | Version strings updated to `v0.1.4` |
-| `docs/api_reference.md` | Version header updated to `0.1.4` |
+- [PASS] **G5.2 — UI/logic separation** — `src/main_window.py` contains only PyQt6 widget code and presentation logic. All calculations, database operations, Elmer orchestration, and export logic are delegated to `src/api.py`. Input changes call `update_design_parameter()`; the Elmer button calls `run_elmer_simulation()`; save/load/delete call their respective API functions.
 
----
+- [PASS] **G5.3 — No hardcoded credentials or dangerous magic numbers** — No credentials are present. The Elmer executable fallback paths (`C:\Program Files\ElmerFEM\bin\ElmerSolver.exe`) are standard Windows installation directories for an external dependency on a Windows-only application, matching the specification defaults. Formula constants (e.g., 57.37, 31.62, 5033) are verbatim Excel transcriptions required by the definition.
 
-## 2. Specific Review Focus
+- [PASS] **G5.4 — No obvious security issues** — No `eval()` or `exec()` is used. Subprocess calls (`subprocess.run` in `src/elmer_integration.py` and pyelmer wrappers in `src/elmer_solver.py`) use argument lists, not shell strings, preventing shell injection. Export functions accept user-supplied paths via file dialogs; no unsafe path traversal is performed.
 
-### 2.1 Fix Minimality & Correctness ✅
+- [FAIL] **G5.5 — Error handling at system boundaries** — Several public API functions that cross system boundaries lack `try/except` wrappers for file I/O errors:
+  - `src/api.py:generate_elmer_input_files` calls `out_dir.mkdir`, `build_geometry`, and `generate_sif` without catching `PermissionError`, `OSError`, or `ImportError`.
+  - `src/elmer_integration.py:parse_elmer_output` checks `exists()` but calls `read_text()` without catching `PermissionError` or `OSError`.
+  - `src/elmer_integration.py:generate_density_plot` calls `meshio.read` without catching file-read errors.
+  - `src/elmer_integration.py:run_elmer_simulation` does not wrap the overall pipeline; a failure in `build_geometry`, `build_and_solve`, `extract_vc_sweep`, `generate_density_plot`, or `parse_elmer_output` propagates an unhandled exception instead of a meaningful `RuntimeError`.
+  - `src/post_processor.py:write_output_files` writes text files without catching `OSError`.
 
-**`src/elmer_integration.py` — `run_elmer_simulation()`**
-
-```python
-workdir = Path(design.working_directory)
-workdir.mkdir(parents=True, exist_ok=True)
-```
-
-- Line 173 now derives the working directory from the design object instead of calling `tempfile.mkdtemp()`.
-- The same `workdir` variable is used for:
-  - Geometry build (`build_geometry`, line 177)
-  - Solver sub-directory (`sim`, line 180)
-  - Output file writing (`write_output_files`, line 188)
-  - Density plot generation (`B-Field.png`, line 191)
-  - Output parsing (`parse_elmer_output`, line 195)
-
-**`src/main_window.py` — `_refresh_all_outputs()`**
-
-```python
-png_path = Path(d.working_directory) / "B-Field.png"
-```
-
-- Line 390 reads from exactly the same path where the plot is now written.
-- The path mismatch is fully resolved with no additional indirection.
-
-### 2.2 Unused Import Removal ✅
-
-Current imports in `src/elmer_integration.py` (lines 7–19):
-
-```python
-import os
-import re
-import subprocess
-from pathlib import Path
-from typing import Any
-```
-
-Neither `tempfile` nor `time` are imported. Both were successfully removed.
-
-### 2.3 Version Strings ✅
-
-| Location | String |
-|----------|--------|
-| `src/main_window.py:67` | `"LoudspeakerFEA v0.1.4"` |
-| `src/main_window.py:512` | `"LoudspeakerFEA v0.1.4"` |
-| `docs/api_reference.md:3` | `**Version:** 0.1.4` |
-
-All version strings consistently show `v0.1.4`.
-
-### 2.4 Hardcoded Paths / Environment-Specific Values ✅
-
-A `ripgrep` search across `projects/LoudspeakerFEA/src` for `terav`, `C:\Users`, or `C:\ElmerFEA` returned **zero matches**.
-
-The fix introduces no new hardcoded absolute paths. `elmer_integration.py` now relies entirely on `design.working_directory` and `design.elmer_solver_path`, both of which are user-configurable via the Setup menu and persisted in SQLite.
-
-**Note on existing defaults:** `src/models.py` still contains `find_elmer_executable()` which searches `C:\Program Files\ElmerFEM\bin\ElmerSolver.exe` and `C:\Program Files (x86)\ElmerFEM\bin\ElmerSolver.exe`. These are standard, non-user-specific installation directories and were **not modified** in this bug fix. `models.py` also uses `tempfile.gettempdir()` to build a portable default working directory — this is cross-platform safe and not environment-specific.
-
-### 2.5 Regression Check ✅
-
-The real pipeline steps in `run_elmer_simulation()` are unchanged except for the directory root:
-
-1. `recalculate_derived(design)`
-2. `build_geometry(design, str(workdir))`
-3. `build_and_solve(..., sim_dir, elmersolver=design.elmer_solver_path)`
-4. `extract_vc_sweep(vtu_path, design)`
-5. `extract_side_leakage(vtu_path, design, n_points=100)`
-6. `write_output_files(workdir, ...)`
-7. `generate_density_plot(vtu_path, design, plot_path)`
-8. `parse_elmer_output(workdir)`
-9. Populate design fields
-10. `recalculate_derived(design)`
-
-All intermediate file I/O now occurs in a single, predictable directory tree. There is no risk of stale files from previous `tempfile` runs because the directory is stable and under user control.
+- [PASS] **G5.6 — API reference accuracy** — `docs/api_reference.md` documents every exported function in `src/api.py` (`__all__`). Parameter names, types, and return types match the implementation. No documented function is missing from the implementation, and no implemented function is missing from the reference.
 
 ---
 
-## 3. Quality Gate Assessment
+## Required Actions
 
-### G5.1 — All API functions present and correctly named ✅ PASS
+1. **Wrap public API file-I/O functions in `try/except` with meaningful messages.**
+   - In `src/api.py`, wrap `generate_elmer_input_files` in `try/except (OSError, PermissionError)` and re-raise as `RuntimeError` with a clear message.
+   - In `src/elmer_integration.py`, wrap `parse_elmer_output` file reads in `try/except (OSError, PermissionError)`.
+   - In `src/elmer_integration.py`, wrap `generate_density_plot` in `try/except (OSError, FileNotFoundError)` around `meshio.read`.
+   - In `src/elmer_integration.py`, wrap the body of `run_elmer_simulation` in a `try/except Exception` that raises `RuntimeError(f"Elmer simulation failed: {e}")` so callers get a single, meaningful exception at the pipeline boundary.
+   - In `src/post_processor.py`, wrap `write_output_files` file writes in `try/except OSError`.
 
-The four public functions exported from `src/elmer_integration.py` — `parse_elmer_output`, `run_elmer_solver`, `run_elmer_simulation`, and `generate_density_plot` — are all re-exported through `src/api.py` and listed in `__all__`. Their signatures match the documentation in `docs/api_reference.md`.
-
-### G5.2 — UI and business logic separated ✅ PASS
-
-`src/main_window.py` contains only PyQt6 widget code and delegates all business logic to `src.api`. The Elmer simulation logic remains entirely in `src/elmer_integration.py`. Separation is preserved.
-
-### G5.3 — No hardcoded absolute paths, credentials, magic numbers, or environment-specific values ✅ PASS
-
-No new hardcoded paths were introduced. The fix replaces a temporary directory with a configurable design field. Solver paths and working directories are user-managed via the Setup menu and stored in SQLite settings. Standard Windows `Program Files` search paths in `models.py` are pre-existing and non-user-specific.
-
-### G5.4 — No security issues ✅ PASS
-
-- `subprocess.run` is invoked with a list argument (no `shell=True`).
-- No credentials or secrets are present.
-- File I/O uses `pathlib.Path` with safe operations (`mkdir(parents=True, exist_ok=True)`).
-
-### G5.5 — Error handling at boundaries ✅ PASS
-
-- `elmer_integration.py` raises `FileNotFoundError` for missing executables and output files, `RuntimeError` for solver failure, `ImportError` for missing optional dependencies (`meshio`, `numpy`, `matplotlib`), and `ValueError`/`KeyError` for malformed VTU data.
-- `main_window.py` wraps user actions (save, load, export, Elmer run) in `try/except` blocks and surfaces errors via `QMessageBox.critical` and the status bar.
-
-### G5.6 — API reference accurate ✅ PASS
-
-The `docs/api_reference.md` version header correctly reads `0.1.4`. Documented signatures for `run_elmer_simulation`, `run_elmer_solver`, `parse_elmer_output`, and `generate_density_plot` match the implementation. No API changes were made in this bug fix, so accuracy is maintained.
-
-**Pre-existing minor note (not a regression):** `api_reference.md` documents `generate_elmer_input_files` and `initialize_formula_defaults`, neither of which is exported in `src/api.py.__all__`. These items existed prior to v0.1.4 and were not introduced by this fix.
-
----
-
-## 4. Conclusion
-
-The v0.1.4 bug fix is **minimal, correct, and free of regressions**. The path mismatch between the Elmer simulation writer and the GUI reader is resolved by using `design.working_directory` consistently. Unused imports were removed. Version strings were updated. No new hardcoded paths or security issues were introduced.
-
-**Overall Result: PASS**
+2. **Re-run the code review after fixes to confirm G5.5 passes.**

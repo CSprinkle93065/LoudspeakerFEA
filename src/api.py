@@ -26,6 +26,8 @@ from src.engine import (
     get_wire_properties,
     get_former_density,
 )
+from src.geometry_builder import build_geometry
+from src.elmer_solver import generate_sif
 from src.elmer_integration import (
     generate_density_plot,
     parse_elmer_output,
@@ -141,6 +143,25 @@ run_elmer_simulation = run_elmer_simulation
 parse_elmer_output = parse_elmer_output
 
 
+def generate_elmer_input_files(design: LoudspeakerDesign, directory: str) -> tuple[str, str]:
+    """Write the Elmer SIF file and generate the mesh directory in the given directory.
+
+    Returns
+    -------
+    tuple[str, str]
+        (sif_path, mesh_directory_path)
+    """
+    out_dir = Path(directory)
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        mesh_path = build_geometry(design, str(out_dir))
+        sif_path = generate_sif(design, Path(mesh_path), out_dir)
+    except (OSError, PermissionError, ImportError) as e:
+        raise RuntimeError(f"Failed to generate Elmer input files in {directory}: {e}") from e
+    mesh_dir = out_dir / "mesh"
+    return str(sif_path), str(mesh_dir)
+
+
 # ─── Export ──────────────────────────────────────────────────────────────────
 
 def export_blx_csv(design: LoudspeakerDesign, filepath: str) -> None:
@@ -240,6 +261,7 @@ __all__ = [
     "find_elmer_executable",
     "parse_elmer_output",
     "generate_density_plot",
+    "generate_elmer_input_files",
     # Export
     "export_blx_csv",
     "export_side_leakage_csv",

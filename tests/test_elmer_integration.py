@@ -235,3 +235,100 @@ def test_run_elmer_simulation_calls_real_pipeline(tmp_path: Path):
         assert len(result.side_leakage_data) == 100
         assert result.primary_magnet_avg_b == 0.987
         assert result.secondary_magnet_avg_b == "N/A"
+
+
+# ─── TC-21: generate_elmer_input_files ───────────────────────────────────────
+
+
+def test_generate_elmer_input_files(tmp_path: Path):
+    """TC-21: generate_elmer_input_files writes SIF and creates mesh directory."""
+    from src.api import generate_elmer_input_files, create_design
+    design = create_design()
+    design.working_directory = str(tmp_path)
+
+    with patch("src.api.build_geometry") as mock_build, \
+         patch("src.api.generate_sif") as mock_sif:
+        mesh_path = tmp_path / "motor.msh"
+        mesh_path.write_text("mock mesh")
+        sif_path = tmp_path / "case.sif"
+        sif_path.write_text("MagnetoDynamics2D\n")
+        mock_build.return_value = str(mesh_path)
+
+        def _mock_generate_sif(*args, **kwargs):
+            # Real generate_sif creates mesh/ via ElmerGrid
+            (tmp_path / "mesh").mkdir(parents=True, exist_ok=True)
+            return sif_path
+
+        mock_sif.side_effect = _mock_generate_sif
+
+        result_sif, result_mesh = generate_elmer_input_files(design, str(tmp_path))
+
+        assert Path(result_sif).exists()
+        assert Path(result_mesh).exists()
+        sif_text = Path(result_sif).read_text()
+        assert "MagnetoDynamics2D" in sif_text
+        mock_build.assert_called_once()
+        mock_sif.assert_called_once()
+
+
+# ─── Bug-fix verification tests (wvc_20260525_140552) ────────────────────────
+
+
+def test_density_plot_uses_motor_bounds():
+    """Bug fix 1: generate_density_plot uses motor geometry bounds for zoom."""
+    import src.post_processor as pp
+    source = Path(pp.__file__).read_text(encoding="utf-8")
+    assert "r_max = max(design.top_plate_od, design.magnet_od, design.bp_od)" in source
+    assert "z_min = -(design.bp_thickness + design.magnet_thickness + design.top_plate_thickness)" in source
+
+
+@patch("src.post_processor.sample_point")
+@patch("src.post_processor.average_b_on_line")
+def test_extract_vc_sweep_raw_b_and_bmagnet(mock_avg, mock_sample, tmp_path: Path):
+    """Bug fix 2: raw B point matches FEMM (no vc_offset), bmagnet across magnet cross-section."""
+    from src.post_processor import extract_vc_sweep
+    from src.api import create_design, recalculate_derived
+
+    design = create_design()
+    design = recalculate_derived(design)
+
+    mock_sample.return_value = (1.0, 0.0, 0.0)
+    mock_avg.return_value = 0.5
+
+    vtu = tmp_path / "dummy.vtu"
+    vtu.write_text("")
+
+    result = extract_vc_sweep(vtu, design)
+
+    # raw_b: 61 calls to sample_point at (vc_radius, pos) with NO vc_offset
+    assert len(mock_sample.call_args_list) == 61
+    vc_radius = design.vc_location_diameter / 2.0
+    for i, call in enumerate(mock_sample.call_args_list):
+        assert call.args[1] == pytest.approx(vc_radius, abs=1e-9)
+        pos = -design.overhang * 1.15 + i * (2.0 * design.overhang * 1.15 / 60.0)
+        assert call.args[2] == pytest.approx(pos, abs=1e-9)
+
+    # bmagnet: last call to average_b_on_line spans magnet radial cross-section
+    assert len(mock_avg.call_args_list) == 62  # 61 for vc_sweep + 1 for bmagnet
+    bmagnet_call = mock_avg.call_args_list[-1]
+    mag_center_y = -design.top_plate_thickness / 2.0 - design.magnet_thickness / 2.0
+    assert bmagnet_call.args[1][0] == pytest.approx(design.magnet_id / 2.0, abs=1e-9)
+    assert bmagnet_call.args[1][1] == pytest.approx(mag_center_y, abs=1e-9)
+    assert bmagnet_call.args[2][0] == pytest.approx(design.magnet_od / 2.0, abs=1e-9)
+    assert bmagnet_call.args[2][1] == pytest.approx(mag_center_y, abs=1e-9)
+
+    assert result["bmagnet"] == 0.5
+    assert len(result["raw_b"]) == 61
+
+
+def test_button_busy_state_in_on_run_elmer():
+    """Bug fix 3: _on_run_elmer disables button during simulation."""
+    import src.main_window as mw
+    source = Path(mw.__file__).read_text(encoding="utf-8")
+    func_start = source.find("def _on_run_elmer(self):")
+    assert func_start != -1
+    func_end = source.find("\n    def ", func_start + 1)
+    func_body = source[func_start:func_end]
+    assert "setEnabled(False)" in func_body
+    assert "setEnabled(True)" in func_body
+    assert "finally:" in func_body

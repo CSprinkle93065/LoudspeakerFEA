@@ -236,25 +236,23 @@ def extract_vc_sweep(vtu_path: Path, design: LoudspeakerDesign) -> dict:
         b_avg = average_b_on_line(vtu_path, p1, p2)
         vc_sweep.append((pos, b_avg))
 
-        # Raw point at coil centre
-        b_mag, _, _ = sample_point(vtu_path, vc_radius, pos + vc_offset)
+        # Raw point at coil centre — FEMM reference samples at (VCdia/2, Xpos) with NO vc_offset
+        b_mag, _, _ = sample_point(vtu_path, vc_radius, pos)
         raw_b.append((pos, b_mag))
 
     # b_at_zero: find the entry closest to position 0
     zero_idx = min(range(61), key=lambda i: abs(vc_sweep[i][0]))
     b_at_zero = vc_sweep[zero_idx][1]
 
-    # bmagnet and bbuck at ±overhang (computed directly for accuracy)
+    # bmagnet: average B across the magnet radial cross-section at the magnet center
+    mag_center_y = -design.top_plate_thickness / 2.0 - design.magnet_thickness / 2.0
     bmagnet = average_b_on_line(
         vtu_path,
-        (vc_radius, vc_ww / 2.0 + overhang + vc_offset),
-        (vc_radius, -vc_ww / 2.0 + overhang + vc_offset),
+        (design.magnet_id / 2.0, mag_center_y),
+        (design.magnet_od / 2.0, mag_center_y),
     )
-    bbuck = average_b_on_line(
-        vtu_path,
-        (vc_radius, vc_ww / 2.0 - overhang + vc_offset),
-        (vc_radius, -vc_ww / 2.0 - overhang + vc_offset),
-    )
+    # LoudspeakerFEA does not have bucking magnets
+    bbuck = 0.0
 
     return {
         "b_at_zero": b_at_zero,
@@ -358,8 +356,11 @@ def generate_density_plot(
     triang = mtri.Triangulation(points[:, 0], points[:, 1], triangles)
     interp = mtri.LinearTriInterpolator(triang, b_mag)
 
-    r_min, r_max = float(points[:, 0].min()), float(points[:, 0].max())
-    z_min, z_max = float(points[:, 1].min()), float(points[:, 1].max())
+    # Motor-geometry bounds (same logic as FEMM reference) so the motor fills the frame
+    r_min = 0.0
+    r_max = max(design.top_plate_od, design.magnet_od, design.bp_od) / 2.0 + 20.0
+    z_min = -(design.bp_thickness + design.magnet_thickness + design.top_plate_thickness) - 20.0
+    z_max = design.top_plate_thickness / 2.0 + 20.0
 
     # Use a fine grid for smooth appearance
     grid_r, grid_z = np.mgrid[r_min:r_max:800j, z_min:z_max:800j]
@@ -440,7 +441,10 @@ def write_output_files(
     for pos, b_mag in vc_results["raw_b"]:
         lines.append(f"{pos:.6f}\t{b_mag:.6f}")
 
-    vc_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    try:
+        vc_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError as e:
+        raise RuntimeError(f"Failed to write VC sweep output file {vc_path}: {e}") from e
 
     # ------------------------------------------------------------------
     # leakage contour.txt
@@ -462,4 +466,7 @@ def write_output_files(
             z = z_top
         leak_lines.append(f"{z:.6f}\t{b_val:.6f}")
 
-    leak_path.write_text("\n".join(leak_lines) + "\n", encoding="utf-8")
+    try:
+        leak_path.write_text("\n".join(leak_lines) + "\n", encoding="utf-8")
+    except OSError as e:
+        raise RuntimeError(f"Failed to write leakage contour file {leak_path}: {e}") from e

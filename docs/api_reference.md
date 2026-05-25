@@ -1,6 +1,6 @@
 # LoudspeakerFEA — API Reference
 
-**Version:** 0.1.4  
+**Version:** 0.1.5  
 **Module:** `src.api`
 
 All public functions are exported from `src.api`.  These are the only entry points that AI agents and the UI should use.
@@ -276,6 +276,31 @@ print(d.bl)
 
 ---
 
+### `generate_elmer_input_files(design: LoudspeakerDesign, directory: str) -> tuple[str, str]`
+
+Write the Elmer SIF file and generate the mesh directory in the given directory.
+
+**Parameters:**
+- `design` — The design to simulate.
+- `directory` — Output directory for the SIF and mesh files.
+
+**Returns:**
+- `tuple[str, str]` — `(sif_path, mesh_directory_path)`.
+
+**Raises:**
+- `RuntimeError` — If the directory cannot be created, geometry cannot be built, or SIF cannot be generated (wraps `OSError`, `PermissionError`, or `ImportError`).
+
+**Example:**
+```python
+from src.api import create_design, generate_elmer_input_files
+d = create_design()
+sif_path, mesh_dir = generate_elmer_input_files(d, r"C:\ElmerFEA")
+print(sif_path)   # C:\ElmerFEA\case.sif
+print(mesh_dir)   # C:\ElmerFEA\mesh
+```
+
+---
+
 ### `find_elmer_executable() -> str`
 
 Search common Elmer installation paths and return the first existing `ElmerSolver.exe`. Also checks the system `PATH` via `shutil.which`.
@@ -305,6 +330,7 @@ Uses a **fixed color scale of 0–2 T** with **decimal tick labels** (no scienti
 
 **Raises:**
 - `ImportError` — If `meshio`, `numpy`, or `matplotlib` are not installed.
+- `RuntimeError` — If the VTU file cannot be read (wraps `OSError` or `FileNotFoundError`).
 
 **Example:**
 ```python
@@ -335,6 +361,7 @@ Parse `VCSweepOutput.txt` and `leakage contour.txt` in the given directory.
 
 **Raises:**
 - `FileNotFoundError` — If expected files are missing.
+- `RuntimeError` — If a file exists but cannot be read (wraps `OSError` or `PermissionError`).
 
 **Example:**
 ```python
@@ -565,6 +592,7 @@ __all__ = [
     "find_elmer_executable",
     "parse_elmer_output",
     "generate_density_plot",
+    "generate_elmer_input_files",
     "export_blx_csv",
     "export_side_leakage_csv",
     "export_results_json",
