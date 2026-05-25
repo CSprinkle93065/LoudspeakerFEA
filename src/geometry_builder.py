@@ -107,13 +107,12 @@ def build_geometry(design: LoudspeakerDesign, directory: str) -> Path:
     vent = occ.addRectangle(0.0, bp_y_bottom, 0.0, ppvent / 2.0, ppht + bpth)
 
     # 6. Coil air (voice-coil winding window)
-    #    The FEMM macro draws a polygon whose bottom is implicitly bounded by
-    #    the pole piece and top plate.  We create a rectangle that overlaps
-    #    those parts; fragment() will leave only the true air pocket.
-    coil_r_min = ppod / 2.0 - tpth
-    coil_r_max = tpid / 2.0 + tpth
-    coil_y_bottom = -tpth / 2.0 - magth + ppht
-    coil_y_top = -tpth / 2.0 - magth + 2.0 * ppht
+    #    Centered on the actual coil position so the mesh is refined where
+    #    the B-field is sampled during the VC sweep.
+    coil_r_min = (design.coil_id + 2.0 * design.former_thickness) / 2.0
+    coil_r_max = design.coil_winding_max_od / 2.0
+    coil_y_bottom = design.vc_offset - design.ww / 2.0
+    coil_y_top = design.vc_offset + design.ww / 2.0
     coil_air = occ.addRectangle(coil_r_min, coil_y_bottom, 0.0,
                                 coil_r_max - coil_r_min, coil_y_top - coil_y_bottom)
 

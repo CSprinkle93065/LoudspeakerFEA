@@ -332,3 +332,69 @@ def test_button_busy_state_in_on_run_elmer():
     assert "setEnabled(False)" in func_body
     assert "setEnabled(True)" in func_body
     assert "finally:" in func_body
+
+
+# ─── Bug-fix verification tests (wvc_20260525_154944) ────────────────────────
+
+
+@patch("meshio.read")
+@patch("matplotlib.pyplot.subplots")
+@patch("matplotlib.pyplot.colorbar")
+@patch("matplotlib.pyplot.tight_layout")
+@patch("matplotlib.pyplot.savefig")
+@patch("matplotlib.pyplot.close")
+def test_density_plot_includes_geometry_overlays(
+    mock_close, mock_savefig, mock_tight, mock_cbar, mock_subplots, mock_meshio_read, tmp_path: Path
+):
+    """Bug fix v0.1.6: generate_density_plot adds motor geometry overlay patches."""
+    import numpy as np
+    from matplotlib.patches import Rectangle
+    from src.post_processor import generate_density_plot
+    from src.api import create_design, recalculate_derived
+
+    design = create_design()
+    design = recalculate_derived(design)
+
+    # Minimal synthetic mesh covering the plot grid
+    pts = np.array([
+        [0, -100], [200, -100], [200, 100], [0, 100],
+    ], dtype=float)
+    pts_3d = np.pad(pts, ((0, 0), (0, 1)))
+    tris = np.array([[0, 1, 2], [0, 2, 3]])
+    b_vec = np.ones((4, 3), dtype=float)
+
+    mock_mesh = MagicMock()
+    mock_mesh.points = pts_3d
+    mock_mesh.cells_dict = {"triangle": tris}
+    mock_mesh.point_data = {"magnetic flux density": b_vec}
+    mock_meshio_read.return_value = mock_mesh
+
+    mock_ax = MagicMock()
+    mock_fig = MagicMock()
+    mock_subplots.return_value = (mock_fig, mock_ax)
+    mock_cbar.return_value = MagicMock()
+
+    vtu = tmp_path / "case.vtu"
+    vtu.write_text("dummy")
+    output = tmp_path / "B-Field.png"
+
+    generate_density_plot(vtu, design, output)
+
+    # Verify all 5 overlay patches were added
+    assert mock_ax.add_patch.call_count == 5
+
+    labels = []
+    for call in mock_ax.add_patch.call_args_list:
+        rect = call.args[0]
+        assert isinstance(rect, Rectangle)
+        labels.append(rect.get_label())
+
+    assert set(labels) == {"Top plate", "Magnet", "Back plate", "Pole piece", "Coil air"}
+
+    # Verify coil air is centered on vc_offset with height == ww
+    coil_rect = next(
+        r for r in [c.args[0] for c in mock_ax.add_patch.call_args_list]
+        if r.get_label() == "Coil air"
+    )
+    assert coil_rect.get_y() == pytest.approx(design.vc_offset - design.ww / 2.0, abs=1e-9)
+    assert coil_rect.get_height() == pytest.approx(design.ww, abs=1e-9)

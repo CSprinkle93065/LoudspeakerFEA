@@ -322,6 +322,7 @@ def generate_density_plot(
         import numpy as np
         import matplotlib.pyplot as plt
         import matplotlib.tri as mtri
+        from matplotlib.patches import Rectangle
         from matplotlib.ticker import FormatStrFormatter
     except ImportError as exc:
         raise ImportError(
@@ -388,6 +389,54 @@ def generate_density_plot(
     ax.set_xlabel("r (mm)")
     ax.set_ylabel("z (mm)")
     ax.set_title(f"Magnetic Flux Density — {design.name}")
+
+    # Overlay motor geometry outlines
+    tp_rect = Rectangle(
+        (design.top_plate_id / 2.0, -design.top_plate_thickness / 2.0),
+        (design.top_plate_od - design.top_plate_id) / 2.0,
+        design.top_plate_thickness,
+        fill=False, edgecolor="red", linewidth=1.5, label="Top plate"
+    )
+    ax.add_patch(tp_rect)
+
+    mag_rect = Rectangle(
+        (design.magnet_id / 2.0, -design.top_plate_thickness / 2.0 - design.magnet_thickness),
+        (design.magnet_od - design.magnet_id) / 2.0,
+        design.magnet_thickness,
+        fill=False, edgecolor="blue", linewidth=1.5, label="Magnet"
+    )
+    ax.add_patch(mag_rect)
+
+    _bp_y_bottom = -design.top_plate_thickness / 2.0 - design.magnet_thickness - design.bp_thickness
+    bp_rect = Rectangle(
+        (0.0, _bp_y_bottom),
+        design.bp_od / 2.0,
+        design.bp_thickness,
+        fill=False, edgecolor="green", linewidth=1.5, label="Back plate"
+    )
+    ax.add_patch(bp_rect)
+
+    pp_rect = Rectangle(
+        (0.0, _bp_y_bottom),
+        design.pole_od / 2.0,
+        design.pole_height + design.bp_thickness,
+        fill=False, edgecolor="orange", linewidth=1.5, label="Pole piece"
+    )
+    ax.add_patch(pp_rect)
+
+    _coil_r_min = (design.coil_id + 2.0 * design.former_thickness) / 2.0
+    _coil_r_max = design.coil_winding_max_od / 2.0
+    _coil_y_bottom = design.vc_offset - design.ww / 2.0
+    _coil_y_top = design.vc_offset + design.ww / 2.0
+    coil_rect = Rectangle(
+        (_coil_r_min, _coil_y_bottom),
+        _coil_r_max - _coil_r_min,
+        _coil_y_top - _coil_y_bottom,
+        fill=False, edgecolor="purple", linewidth=1.5, linestyle="dashed", label="Coil air"
+    )
+    ax.add_patch(coil_rect)
+
+    ax.legend(loc="upper right", fontsize=8)
 
     plt.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)

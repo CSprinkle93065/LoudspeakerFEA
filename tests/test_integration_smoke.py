@@ -100,6 +100,57 @@ def test_real_elmer_solver_executable_found():
 
 
 # ---------------------------------------------------------------------------
+# Bug-fix verification (wvc_20260525_154944) — coil_air bounds
+# ---------------------------------------------------------------------------
+
+
+def test_build_geometry_coil_air_bounds(tmp_path: Path):
+    """Bug fix v0.1.6: coil_air mesh region is centered on vc_offset ± ww/2."""
+    pytest.importorskip("gmsh")
+    import meshio
+    import numpy as np
+
+    from src.geometry_builder import build_geometry
+    from src.api import create_design, recalculate_derived
+
+    design = create_design()
+    design = recalculate_derived(design)
+
+    msh_path = build_geometry(design, str(tmp_path))
+
+    mesh = meshio.read(str(msh_path))
+
+    # Find coil_air physical group tag
+    coil_air_tag = None
+    for name, (tag, dim) in mesh.field_data.items():
+        if name == "coil_air" and dim == 2:
+            coil_air_tag = int(tag)
+            break
+    assert coil_air_tag is not None, "coil_air physical group not found in mesh"
+
+    # Collect all nodes belonging to coil_air triangles
+    coil_air_nodes = set()
+    for cell_block, physical_arr in zip(mesh.cells, mesh.cell_data["gmsh:physical"]):
+        if cell_block.type == "triangle":
+            mask = physical_arr == coil_air_tag
+            for tri in cell_block.data[mask]:
+                coil_air_nodes.update(tri)
+
+    assert len(coil_air_nodes) > 0, "No nodes in coil_air region"
+
+    coords = mesh.points[list(coil_air_nodes)]
+    y_min = coords[:, 1].min()
+    y_max = coords[:, 1].max()
+
+    expected_y_min = design.vc_offset - design.ww / 2.0
+    expected_y_max = design.vc_offset + design.ww / 2.0
+
+    # Allow small tolerance for mesh discretization at rectangle edges
+    assert y_min == pytest.approx(expected_y_min, abs=0.1)
+    assert y_max == pytest.approx(expected_y_max, abs=0.1)
+
+
+# ---------------------------------------------------------------------------
 # TC-I05: end-to-end integration smoke test
 # ---------------------------------------------------------------------------
 

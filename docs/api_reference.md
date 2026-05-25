@@ -1,6 +1,6 @@
 # LoudspeakerFEA — API Reference
 
-**Version:** 0.1.5  
+**Version:** 0.1.6  
 **Module:** `src.api`
 
 All public functions are exported from `src.api`.  These are the only entry points that AI agents and the UI should use.
