@@ -568,6 +568,7 @@ __all__ = [
     "run_elmer_solver",
     "generate_elmer_input_files",
     "parse_elmer_output",
+    "generate_density_plot",
     "export_blx_csv",
     "export_side_leakage_csv",
     "export_results_json",
