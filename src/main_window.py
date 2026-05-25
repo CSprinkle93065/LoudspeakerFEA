@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("LoudspeakerFEA v0.1.3")
+        self.setWindowTitle("LoudspeakerFEA v0.1.4")
         self.setMinimumSize(1280, 800)
 
         self._design = create_design(name="Design1")
@@ -510,7 +510,7 @@ class MainWindow(QMainWindow):
         self._refresh_all_outputs()
 
     def _on_about(self):
-        QMessageBox.about(self, "About LoudspeakerFEA", "LoudspeakerFEA v0.1.3\n\nFinite Element Analysis augmented desktop application for ceramic magnet woofer motor simulation.")
+        QMessageBox.about(self, "About LoudspeakerFEA", "LoudspeakerFEA v0.1.4\n\nFinite Element Analysis augmented desktop application for ceramic magnet woofer motor simulation.")
 
     def _on_browse_elmer(self):
         path, _ = QFileDialog.getOpenFileName(

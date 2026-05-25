@@ -9,8 +9,6 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-import tempfile
-import time
 from pathlib import Path
 from typing import Any
 
@@ -172,7 +170,8 @@ def run_elmer_simulation(design: LoudspeakerDesign, show_window: bool = False) -
     """
     design = recalculate_derived(design)
 
-    workdir = Path(tempfile.mkdtemp(prefix=f"elmer_run_{int(time.time())}_"))
+    workdir = Path(design.working_directory)
+    workdir.mkdir(parents=True, exist_ok=True)
 
     # 1. Build geometry (Gmsh)
     mesh_path = build_geometry(design, str(workdir))
